@@ -1,4 +1,4 @@
-from lib import find_marker
+from grid_tracker import GridTracker
 import numpy as np
 import cv2
 import time
@@ -16,28 +16,16 @@ gelsight_version = 'Bnz'
 # gelsight_version = 'HSR'
 
 # cap = cv2.VideoCapture("data/GelSight_Twist_Test.mov")
-cap = cv2.VideoCapture("data/GelSight_Shear_Test.mov")
-# cap = cv2.VideoCapture(1)
+# cap = cv2.VideoCapture("data/GelSight_Shear_Test.mov")
+cap = cv2.VideoCapture(1)
 
 
 # Resize scale for faster image processing
 setting.init()
 RESCALE = setting.RESCALE
 
-# Create Mathing Class
-m = find_marker.Matching(
-    N_=setting.N_, 
-    M_=setting.M_, 
-    fps_=setting.fps_, 
-    x0_=setting.x0_, 
-    y0_=setting.y0_, 
-    dx_=setting.dx_, 
-    dy_=setting.dy_)
-"""
-N_, M_: the row and column of the marker array
-x0_, y0_: the coordinate of upper-left marker
-dx_, dy_: the horizontal and vertical interval between adjacent markers
-"""
+# Initialize from a complete untouched grid in processed-frame coordinates.
+m = GridTracker(setting.N_, setting.M_)
 
 # save video
 fourcc = cv2.VideoWriter_fourcc(*'XVID')
@@ -48,6 +36,35 @@ else:
     out = cv2.VideoWriter('output.mp4',fourcc, 30.0, (1280//RESCALE,720//RESCALE))
 
 # for i in range(30): ret, frame = cap.read()
+
+def measure_grid(mc, rows=7, cols=9):
+    points = np.asarray(mc, dtype=np.float64)
+
+    if len(points) != rows * cols:
+        print(f"Need {rows * cols} markers; detected {len(points)}")
+        return None
+
+    # For a roughly horizontal grid: group by row, then sort left to right.
+    points = points[np.argsort(points[:, 1])]
+    grid = points.reshape(rows, cols, 2)
+    grid = np.stack([row[np.argsort(row[:, 0])] for row in grid])
+
+    x0, y0 = grid[0, 0]
+    dx = np.diff(grid[:, :, 0], axis=1).mean()
+    dy = np.diff(grid[:, :, 1], axis=0).mean()
+
+    print("\n# Paste into setting.py (already in processed-frame pixels):")
+    print(f"N_ = {rows}")
+    print(f"M_ = {cols}")
+    print(f"x0_ = {x0:.3f}")
+    print(f"y0_ = {y0:.3f}")
+    print(f"dx_ = {dx:.3f}")
+    print(f"dy_ = {dy:.3f}\n")
+    sys.exit()
+
+    return grid
+
+grid_measured = False
 
 while(True):
 
@@ -71,28 +88,32 @@ while(True):
     # find marker centers
     mc = marker_dectection.marker_center(mask, frame)
 
+    if calibrate and not grid_measured:
+        grid = measure_grid(mc)
+        grid_measured = grid is not None
+
 
     if calibrate == False:
-        tm = time.time()
-        # # matching init
-        m.init(mc)
-
-        # # matching
-        m.run()
-        print(time.time() - tm)
-
-        # # matching result
-        """
-        output: (Ox, Oy, Cx, Cy, Occupied) = flow
-            Ox, Oy: N*M matrix, the x and y coordinate of each marker at frame 0
-            Cx, Cy: N*M matrix, the x and y coordinate of each marker at current frame
-            Occupied: N*M matrix, the index of the marker at each position, -1 means inferred. 
-                e.g. Occupied[i][j] = k, meaning the marker mc[k] lies in row i, column j.
-        """
-        flow = m.get_flow()
-
-        # # draw flow
-        marker_dectection.draw_flow(frame, flow)
+        flow = m.update(mc)
+        if flow is None:
+            status = f"Waiting for {setting.N_ * setting.M_} markers; detected {len(mc)}"
+        else:
+            Ox, Oy, Cx, Cy, occupied = flow
+            valid = occupied >= 0
+            # Never draw stale positions for missing or ambiguous detections.
+            for i, j in zip(*np.where(valid)):
+                start = (int(round(Ox[i, j])), int(round(Oy[i, j])))
+                # end = (int(round(Cx[i, j])), int(round(Cy[i, j])))
+                arrow_scale = 10
+                end = (
+                    int(round(Ox[i, j] + arrow_scale * (Cx[i, j] - Ox[i, j]))),
+                    int(round(Oy[i, j] + arrow_scale * (Cy[i, j] - Oy[i, j]))),
+                )
+                # cv2.arrowedLine(frame, start, end, (0, 0, 255), 1, tipLength=0.2)
+                cv2.arrowedLine(frame, start, end, (0, 0, 255), 2, tipLength=0.2)
+            status = f"Matched {valid.sum()}/{valid.size} | r: reset untouched reference"
+        cv2.putText(frame, status, (5, 15), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.35, (255, 255, 255), 1)
 
     mask_img = mask.astype(frame[0].dtype)
     mask_img = cv2.merge((mask_img, mask_img, mask_img))
@@ -107,8 +128,11 @@ while(True):
     out.write(frame)
 
     print(frame.shape)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
         break
+    if key == ord('r'):
+        m.reset()
 
 # When everything done, release the capture
 cap.release()

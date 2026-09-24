@@ -6,37 +6,60 @@ def init(frame):
     RESCALE = setting.RESCALE
     return cv2.resize(frame, (0, 0), fx=1.0/RESCALE, fy=1.0/RESCALE)
 
-def find_marker(frame):
-    RESCALE = setting.RESCALE
-    # Blur image to remove noise
-    blur = cv2.GaussianBlur(frame, (int(63/RESCALE), int(63/RESCALE)), 0)
+# def find_marker(frame):
+#     RESCALE = setting.RESCALE
+#     # Blur image to remove noise
+#     blur = cv2.GaussianBlur(frame, (int(63/RESCALE), int(63/RESCALE)), 0)
 
-    # subtract the surrounding pixels to magnify difference between markers and background
-    diff = frame.astype(np.float32) - blur
+#     # subtract the surrounding pixels to magnify difference between markers and background
+#     diff = frame.astype(np.float32) - blur
     
-    diff *= 4.0
-    diff[diff<0.] = 0.
-    diff[diff>255.] = 255.
-    diff = cv2.GaussianBlur(diff, (int(63/RESCALE), int(63/RESCALE)), 0)
+#     diff *= 4.0
+#     diff[diff<0.] = 0.
+#     diff[diff>255.] = 255.
+#     diff = cv2.GaussianBlur(diff, (int(63/RESCALE), int(63/RESCALE)), 0)
  
-    # Switch image from BGR colorspace to HSV
-    hsv = cv2.cvtColor(diff.astype(np.uint8), cv2.COLOR_BGR2HSV)
+#     # Switch image from BGR colorspace to HSV
+#     hsv = cv2.cvtColor(diff.astype(np.uint8), cv2.COLOR_BGR2HSV)
     
-    # yellow range in HSV color space
-    yellowMin = (0, 0, 32)
-    yellowMax = (100, 255, 255)
+#     # yellow range in HSV color space
+#     # yellowMin = (0, 0, 32)
+#     yellowMin = (0, 0, 0)
+#     # yellowMax = (100, 255, 255)
+#     yellowMax = (179, 255, 80)
     
-    # Sets pixels to white if in yellow range, else will be set to black
-    mask = cv2.inRange(hsv, yellowMin, yellowMax)
+    
+#     # Sets pixels to white if in yellow range, else will be set to black
+#     mask = cv2.inRange(hsv, yellowMin, yellowMax)
 
+#     return mask
+
+
+def find_marker(frame):
+    blur = cv2.GaussianBlur(frame, (5, 5), 0)
+    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
+
+    blackMin = (0, 0, 0)
+    # blackMax = (179, 255, 80)
+    blackMax = (179, 100, 70)
+    mask = cv2.inRange(hsv, blackMin, blackMax)
+
+    # # Keep the central region containing the marker grid.
+    # h, w = mask.shape
+    # roi = np.zeros_like(mask)
+    # roi[int(0.15*h):int(0.85*h),
+    # int(0.12*w):int(0.88*w)] = 255
+
+    # return cv2.bitwise_and(mask, roi)
     return mask
-
 
 def marker_center(mask, frame):
     RESCALE = setting.RESCALE
     
-    areaThresh1=90/RESCALE**2
-    areaThresh2=1920/RESCALE**2
+    # areaThresh1=90/RESCALE**2
+    # areaThresh2=1920/RESCALE**2
+    areaThresh1=70
+    areaThresh2=500
     MarkerCenter = []
 
     contours=cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -48,6 +71,13 @@ def marker_center(mask, frame):
         x,y,w,h = cv2.boundingRect(contour)
         AreaCount=cv2.contourArea(contour)
         # print(AreaCount)
+        H, W = mask.shape
+        if x > 0.70 * W and y > 0.70 * H:
+            ratio = max(w, h) / max(1, min(w, h))
+            print(
+                f"area={AreaCount:.1f}, ratio={ratio:.2f}, "
+                f"accepted={70 < AreaCount < 400 and ratio < 2}"
+            )
         if AreaCount>areaThresh1 and AreaCount<areaThresh2 and abs(np.max([w, h]) * 1.0 / np.min([w, h]) - 1) < 1:
             t=cv2.moments(contour)
             # print("moments", t)
@@ -56,7 +86,7 @@ def marker_center(mask, frame):
             # if t['mu11'] < -100: continue
             MarkerCenter.append(mc)
             # print(mc)
-            # cv2.circle(frame, (int(mc[0]), int(mc[1])), 10, ( 0, 0, 255 ), 2, 6);
+            cv2.circle(frame, (int(mc[0]), int(mc[1])), 10, ( 0, 0, 255 ), 2, 6);
 
     # 0:x 1:y
     return MarkerCenter

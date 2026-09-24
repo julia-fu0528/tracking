@@ -1,7 +1,7 @@
 
 def init():
     global RESCALE, N_, M_, x0_, y0_, dx_, dy_, fps_
-    RESCALE = 2
+    RESCALE = 8
 
     """
     N_, M_: the row and column of the marker array
@@ -9,10 +9,17 @@ def init():
     dx_, dy_: the horizontal and vertical interval between adjacent markers (in original size)
     fps_: the desired frame per second, the algorithm will find the optimal solution in 1/fps seconds
     """
-    N_ = 8
-    M_ = 8
-    fps_ = 30
-    x0_ = 320 / RESCALE
-    y0_ = 60 / RESCALE
-    dx_ = 84 / RESCALE
-    dy_ = 84 / RESCALE
+    N_ = 7
+    M_ = 9
+    # fps_ = 30
+    fps_ = 5
+    # x0_ = 320 / RESCALE
+    # y0_ = 60 / RESCALE
+    x0_ = 80.342
+    y0_ = 69.913
+    # dx_ = 84 / RESCALE
+    # dy_ = 84 / RESCALE
+    dx_ = 29.257
+    dy_ = 28.493
+    
+    
